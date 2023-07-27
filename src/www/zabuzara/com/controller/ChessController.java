@@ -3,25 +3,31 @@ package www.zabuzara.com.controller;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+
 import javafx.geometry.Insets;
-//import javafx.geometry.NodeOrientation;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import www.zabuzara.com.model.ChessBoard;
-import www.zabuzara.com.model.Operation;
+import www.zabuzara.com.model.PieceType;
 import www.zabuzara.com.tools.Controller;
 import www.zabuzara.com.view.ChessBoardApp;
-//import www.zabuzara.com.tools.ChildController;
 
 public class ChessController extends Controller<AnchorPane> {
 	static private final int RANK_FILE_COUNT = 8;
@@ -40,6 +46,8 @@ public class ChessController extends Controller<AnchorPane> {
 		super(pane);
 				
 		this.chessBoard = new ChessBoard();
+		
+		
 		this.toggleButtons = new ToggleButton[RANK_FILE_COUNT][RANK_FILE_COUNT];
 		this.rankFileMoves = new Integer[2][2];
 		this.rankFileSymbol = new Character[2];
@@ -75,29 +83,44 @@ public class ChessController extends Controller<AnchorPane> {
 		
 		resetButton.setOnAction(event -> reset());
 		
+	
 		/**
 		 * Connect to API
 		 */
-//		final String apiKey = "4affc0ed667375d075ece4ad92663fb879b897d1a59b37f5610346cd836e7555";
-//		final String apiPasword = "6022dfa4062d67891a21f7886e4c52ba0641fb9275a0ae1930d3b9e387158713";
-//		this.apiConnector = new ChessAPIConnector(apiKey, apiPasword);
-//		this.apiConnector.setGameId("f81d514b13423463");
-//		
-//		reset();
-//		this.apiConnector.load();
-		
-//		final String apiOperation = Operation.LOAD.toString();
-//		Map<String, String> params = new HashMap<>();
-//		params.put("apiOperation",  Operation.RESET.toString());
-//		System.out.println((this.apiConnector.get(params).equals("true")) ? "game reset" : "game not reset");
-//		params.put("gameId", gameId);
-////		params.put("piece", piece);
-////		params.put("source", source);
-////		params.put("sink", sink);
-//		System.out.println(apiConnector.get(params));
+		final String token = "5e0e56d84b707694e4b407e05a2817c60dfad6fbee741ac027e247860f58e51bc41ba56500ce19e5ebae80177cb9af1615583919c5573a0a945dac17d6c83c6bc7e4525653b6e59bf2880fc0014524983fd6c7e92b0875292fa8e2d57e0417d6";
+		this.apiConnector = new ChessAPIConnector(token, this.chessBoard);
+		this.apiConnector.setGameId("6e13fd891968dbd5");
+		this.refresh();
+
+	}
+	
+	private void refresh () {
+		this.apiConnector.load();
+		this.rankFileMoves = new Integer[2][2];
+		this.rankFileSymbol = new Character[2];
+	
+		for (int rowRank = this.chessBoard.getPieces().length-1; rowRank >= 0; rowRank -= 1) {
+			for (int columnFile = 0; columnFile < this.chessBoard.getPieces()[rowRank].length; columnFile += 1) {
+
+				if (this.chessBoard.getPieces()[rowRank][columnFile] != null) {
+					Image icon = new Image(this.chessBoard.getPieces()[rowRank][columnFile].avatarPath().toString());
+					ImageView iconView = new ImageView(icon);
+					this.toggleButtons[rowRank][columnFile].setGraphic(iconView);
+				} else {
+					Path emptyPath = Paths.get(ChessBoardApp.class.getPackage().getName().replace('.', '/')).resolve("empty.png");
+					Image icon = new Image(emptyPath.toString());
+					ImageView iconView = new ImageView(icon);
+					this.toggleButtons[rowRank][columnFile].setGraphic(iconView);
+				}
+				this.toggleButtons[rowRank][columnFile].setSelected(false);
+				this.toggleButtons[rowRank][columnFile].setRotate(0);		
+			}
+		}
+		this.resizeHandler();
 	}
 	
 	private void reset () {
+		this.apiConnector.reset();
 		this.chessBoard.reset();
 		
 //		Map<String, String> params = new HashMap<>();
@@ -167,24 +190,82 @@ public class ChessController extends Controller<AnchorPane> {
 						final String rawMove = ChessBoard.convertMove(this.rankFileMoves[0][0],this.rankFileMoves[0][1],this.rankFileMoves[1][0],this.rankFileMoves[1][1]);
 						final String source = rawMove.substring(0,2).toUpperCase();
 						final String sink = rawMove.substring(rawMove.length()-2).toUpperCase();
-//						System.out.println(source + "->" + sink + " : " + this.apiConnector.move(this.rankFileSymbol[0].toString(), source, sink));
 						
-//						if (this.apiConnector.move(this.rankFileSymbol[0].toString(), source, sink)) {
+						final Object result = this.apiConnector.move(this.rankFileSymbol[0].toString(), source, sink);
+						
+						
+						if (result instanceof Map) {
+							@SuppressWarnings("unchecked")
+							final Map<String, Object> promotion = (Map<String, Object>) result;
+							final String promoteSource = Objects.toString(promotion.get("source"));
+							final String promoteSink = Objects.toString(promotion.get("sink"));
+							final boolean promoteSide = (boolean) promotion.get("side");
+							
+							Stage popupwindow=new Stage();
+							popupwindow.initModality(Modality.APPLICATION_MODAL);
+							popupwindow.setTitle("Promotion");
+							Label label1= new Label("Choose piece to promote");
+							Button button1= new Button("Close this pop up window");
+							button1.setOnAction(e -> popupwindow.close());
+							VBox layout= new VBox(10);
+							HBox toPromotePiecesBox = new HBox();
+							toPromotePiecesBox.setAlignment(Pos.CENTER);
+							toPromotePiecesBox.setSpacing(5);
+							final char[] symbols = promoteSide ? new char[]{'Q', 'R', 'B', 'N'} : new char[]{'q', 'r', 'b', 'n'};
+							for(char symbol: symbols) {
+	                            Image icon = new Image(PieceType.valueOf(symbol).avatarPath().toString());
+	                            ImageView iconView = new ImageView(icon);
+	                            iconView.setFitWidth(30);
+	                            iconView.setFitHeight(30);
+	                            Button iconFigure = new Button("",iconView);
+	                            iconFigure.setId(String.valueOf(symbol));
+	                            iconFigure.addEventHandler(MouseEvent.MOUSE_CLICKED, (e) -> {
+	                            	Button target = (Button) e.getTarget();
+	                            	
+	                            	this.apiConnector.promote(target.getId(), promoteSource, promoteSink);
+	    							
+	                            	this.chessBoard.move(this.rankFileMoves[0][0], this.rankFileMoves[0][1], this.rankFileMoves[1][0], this.rankFileMoves[1][1]);
+	    							ImageView oldImageView = (ImageView) this.toggleButtons[this.rankFileMoves[0][0]][this.rankFileMoves[0][1]].getGraphic();										
+	    							this.toggleButtons[rank][file].setGraphic(oldImageView);
+	    							int moveIndex = this.chessBoard.moves().size()/2 + 1;
+	    							String output = this.movesDisplay.getText() + (this.chessBoard.moves().size() == 1 ? (moveIndex+".\t ") : "");
+	    							String delimiter = (this.chessBoard.moves().size() + 1) % 2 == 1 ? "\n"+moveIndex+".\t " : ", ";
+	    							String move = this.chessBoard.moves().get(this.chessBoard.moves().size() - 1);
+	    							this.movesDisplay.setText(output + move + delimiter);
+	    							
+	                            	popupwindow.close();
+	                            	this.refresh();
+	                            });
+	                           
+	                            toPromotePiecesBox.getChildren().add(iconFigure);
+							}
+						
+			
+							layout.getChildren().addAll(label1, toPromotePiecesBox);
+							layout.setAlignment(Pos.CENTER);
+							layout.setPadding(new Insets(10));
+							Scene scene1= new Scene(layout);
+							popupwindow.setScene(scene1);
+							popupwindow.showAndWait();
+
+						}
+						
+						Boolean isValidMove = (Boolean) result;
+						if (isValidMove) {
 //							
 							this.chessBoard.move(this.rankFileMoves[0][0], this.rankFileMoves[0][1], this.rankFileMoves[1][0], this.rankFileMoves[1][1]);
 							ImageView oldImageView = (ImageView) this.toggleButtons[this.rankFileMoves[0][0]][this.rankFileMoves[0][1]].getGraphic();										
 							this.toggleButtons[rank][file].setGraphic(oldImageView);
 							int moveIndex = this.chessBoard.moves().size()/2 + 1;
-							String output = this.movesDisplay.getText() + (this.chessBoard.moves().size() == 1 ? (moveIndex+"\t: ") : "");
-							String delimiter = (this.chessBoard.moves().size() + 1) % 2 == 1 ? "\n"+moveIndex+"\t: " : ", ";
+							String output = this.movesDisplay.getText() + (this.chessBoard.moves().size() == 1 ? (moveIndex+".\t ") : "");
+							String delimiter = (this.chessBoard.moves().size() + 1) % 2 == 1 ? "\n"+moveIndex+".\t " : ", ";
 							String move = this.chessBoard.moves().get(this.chessBoard.moves().size() - 1);
 							this.movesDisplay.setText(output + move + delimiter);
-							
-//							this.apiConnector.load();
-//						} else {
-//							System.out.println("invalid move");
-//							this.toggleButtons[rank][file].setRotate(0);
-//						}
+							this.refresh();
+						} else {
+							System.out.println("invalid move");
+							this.toggleButtons[rank][file].setRotate(0);
+						}
 					} catch (Exception e) {
 						
 					}
